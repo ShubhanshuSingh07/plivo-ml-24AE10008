@@ -1,15 +1,4 @@
-"""
-train.py — Train the EOT classifier on English + Hindi jointly.
 
-    python train.py --data_dir data/english data/hindi --model_out eot_model.joblib
-
-Outputs (all relative to this file's directory):
-    eot_model.joblib      calibrated model + feature order + config
-    artifacts/oof.csv     out-of-fold p_eot for every pause
-    artifacts/importance.csv
-    artifacts/delay_vs_cutoff.png
-    artifacts/metrics.json
-"""
 
 from __future__ import annotations
 
@@ -34,12 +23,8 @@ ART = os.path.join(HERE, "artifacts")
 
 N_SPLITS = 5
 RANDOM_STATE = 0
-FALLBACK_TIMEOUT_S = 1.6   # delay charged when the model never fires on a turn
-                           # (must match score.py's TIMEOUT_S — this is the real
-                           # deployment timeout the grader charges)
+FALLBACK_TIMEOUT_S = 1.6 
 
-
-# --------------------------------------------------------------------------- #
 def make_base_model() -> HistGradientBoostingClassifier:
     return HistGradientBoostingClassifier(
         max_depth=4,
@@ -75,17 +60,9 @@ def load_labels(data_dirs: List[str]) -> Tuple[pd.DataFrame, List[str]]:
     return pd.concat(frames, ignore_index=True), dirs
 
 
-# --------------------------------------------------------------------------- #
-# Task metric: mean response delay subject to false-cutoff rate <= 5%
-# --------------------------------------------------------------------------- #
+
 def turn_level_curve(meta: pd.DataFrame, y: np.ndarray, p: np.ndarray,
                      thresholds: np.ndarray) -> pd.DataFrame:
-    """Simulate the streaming policy: fire at the first pause with p >= thr.
-
-    false cutoff  : fired on a `hold` pause.
-    response delay: pause_start(fired) - pause_start(true eot), floored at 0.
-                    Turns where we never fire are charged FALLBACK_TIMEOUT_S.
-    """
     d = meta.copy()
     d["y"], d["p"] = np.asarray(y).astype(int), np.asarray(p, dtype=float)
     d = d.sort_values(["__gid", "pause_index"])
@@ -125,8 +102,6 @@ def operating_point(curve: pd.DataFrame, max_fcr: float = 0.05) -> dict:
         return {}
     return ok.sort_values("mean_delay_s").iloc[0].to_dict()
 
-
-# --------------------------------------------------------------------------- #
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_dir", nargs="+", required=True,
@@ -144,7 +119,7 @@ def main() -> None:
         print(f"[features] {d}")
         X, M = build_feature_frame(d, sub)
         M["__gid"] = sub["__gid"].to_numpy()
-        M["label"] = sub["label"].to_numpy()   # used ONLY as the training target
+        M["label"] = sub["label"].to_numpy()  
         Xs.append(X)
         Ms.append(M)
     X = pd.concat(Xs, ignore_index=True)
@@ -153,7 +128,6 @@ def main() -> None:
     groups = M["__gid"].to_numpy()
     print(f"[data] eot={y.sum()}  hold={(1 - y).sum()}  ({y.mean():.1%} positive)")
 
-    # ---- out-of-fold evaluation, grouped by turn ---------------------------
     gkf = GroupKFold(n_splits=N_SPLITS)
     oof = np.zeros(len(y), dtype=float)
     for k, (tr, te) in enumerate(gkf.split(X, y, groups)):
@@ -203,7 +177,6 @@ def main() -> None:
     except Exception as e:  # plotting is optional
         print(f"[warn] plot skipped: {e}")
 
-    # ---- permutation importance on the last fold --------------------------
     if not args.skip_importance:
         tr, te = list(GroupKFold(n_splits=N_SPLITS).split(X, y, groups))[-1]
         base = make_base_model().fit(X.iloc[tr], y[tr], sample_weight=class_weights(y[tr]))
@@ -215,7 +188,6 @@ def main() -> None:
             .sort_values("importance", ascending=False) \
             .to_csv(os.path.join(ART, "importance.csv"), index=False)
 
-    # ---- final model on all data ------------------------------------------
     full_cv = list(GroupKFold(n_splits=N_SPLITS).split(X, y, groups))
     final = CalibratedClassifierCV(make_base_model(), method="isotonic", cv=full_cv)
     final.fit(X, y, sample_weight=class_weights(y))

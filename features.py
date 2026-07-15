@@ -4,7 +4,6 @@ import numpy as np
 import librosa
 import scipy.stats as stats
 
-# Define columns globally so train.py and predict.py can align perfectly
 FEATURE_COLUMNS = [
     "pause_index", "cum_duration", "trailing_voiced_ratio", "z_pitch_trailing", 
     "f0_slope_300_500", "z_energy_trailing", "rms_slope_300", "fade_out_ratio",
@@ -16,11 +15,9 @@ def extract_features_for_pause(audio_path, pause_start, pause_index):
     """
     Extracts causal features strictly using audio from t=0 to pause_start.
     """
-    # 1. Strict Causality: Load only up to pause_start
     y, sr = librosa.load(audio_path, sr=16000, duration=pause_start)
     
-    # 2. Fix Short Audio Output
-    if len(y) < 1600: # Less than 100ms of audio
+    if len(y) < 1600: 
         empty_feats = {k: np.nan for k in FEATURE_COLUMNS}
         empty_feats["pause_index"] = pause_index
         return empty_feats
@@ -35,10 +32,8 @@ def extract_features_for_pause(audio_path, pause_start, pause_index):
     features = {}
     features["pause_index"] = pause_index
     
-    # --- GLOBAL TURN FEATURES ---
     global_y = y
     
-    # Fix: Use pyin to properly unpack f0 and voiced_flag
     global_f0, global_voiced_flag, _ = librosa.pyin(global_y, fmin=80, fmax=400, 
                                                  sr=sr, frame_length=frame_len, hop_length=hop_len)
     
@@ -53,8 +48,7 @@ def extract_features_for_pause(audio_path, pause_start, pause_index):
     global_voiced_ratio = np.sum(global_voiced_flag) / len(global_voiced_flag) if global_voiced_flag is not None and len(global_voiced_flag) > 0 else 0.0
     features["cum_duration"] = pause_start
 
-    # --- TRAILING WINDOW FEATURES ---
-    # Fix: Use pyin
+
     f0, voiced_flag, _ = librosa.pyin(trailing_y, fmin=80, fmax=400, 
                                   sr=sr, frame_length=frame_len, hop_length=hop_len)
     voiced_f0 = f0[voiced_flag] if voiced_flag is not None else []
@@ -106,7 +100,6 @@ def extract_features_for_pause(audio_path, pause_start, pause_index):
     spec_roll = librosa.feature.spectral_rolloff(y=trailing_y, sr=sr, n_fft=frame_len, hop_length=hop_len)[0]
     mfcc = librosa.feature.mfcc(y=trailing_y, sr=sr, n_mfcc=13, n_fft=frame_len, hop_length=hop_len)
     
-    # Fix: Safely compute delta for short sequences
     delta_width = min(9, mfcc.shape[1])
     if delta_width < 3:
         mfcc_delta = np.zeros_like(mfcc)
@@ -153,17 +146,14 @@ def build_feature_frame(data_dir, labels_df):
     """
     features_list = []
     
-    # Extract features for each row in the labels file
     for _, row in labels_df.iterrows():
         audio_path = os.path.join(data_dir, row["audio_file"])
         feats = extract_features_for_pause(audio_path, row["pause_start"], row["pause_index"])
         features_list.append(feats)
-        
-    # Build the feature DataFrame and enforce strict column ordering
+
     X = pd.DataFrame(features_list)
     X = X[FEATURE_COLUMNS]
     
-    # Return features and a copy of the metadata
     M = labels_df.copy()
     
     return X, M
