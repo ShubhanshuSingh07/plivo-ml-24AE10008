@@ -1,0 +1,11 @@
+{
+  "oof_roc_auc": 0.6099746621621621,
+  "oof_pr_auc": 0.49527107321987296,
+  "operating_point_fcr<=5%": {
+    "threshold": 0.7,
+    "false_cut_rate": 0.03,
+    "mean_delay_s": 1.472,
+    "p50_delay_s": 1.6,
+    "n_turns": 200.0
+  }
+}

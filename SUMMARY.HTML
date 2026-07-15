@@ -1,0 +1,126 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm;
+            background-color: #ffffff;
+        }
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            line-height: 1.5;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        h1 { color: #2c3e50; font-size: 24pt; margin-bottom: 5px; }
+        h2 { color: #2c3e50; font-size: 18pt; margin-top: 30px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        h3 { color: #555; font-size: 14pt; margin-top: 20px; }
+        .summary-box { background-color: #f9f9f9; padding: 15px; border-left: 5px solid #2c3e50; margin-bottom: 20px; }
+        .diagram-container {
+            display: table;
+            width: 100%;
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            background: #fff;
+            text-align: center;
+        }
+        .box { border: 1px solid #333; padding: 10px 20px; display: inline-block; margin-bottom: 10px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 10pt;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th { background-color: #f2f2f2; color: #333; font-weight: bold; }
+        tr:nth-child(even) { background-color: #fcfcfc; }
+        code { background-color: #f4f4f4; padding: 2px 4px; border-radius: 3px; font-family: 'Courier New', Courier, monospace; }
+        .placeholder { color: #777; font-style: italic; }
+    </style>
+</head>
+<body>
+
+    <h1>DELIVERABLE: SUMMARY</h1>
+    <p><strong>End-of-Turn detection from prosody alone</strong></p>
+    
+    <div class="summary-box">
+        <p>A causal, CPU-only classifier that scores each annotated pause with <code>p_eot</code>—the probability the speaker has finished—using nothing but hand-built acoustic features and gradient-boosted trees. No pretrained models, no external data, English and Hindi trained jointly.</p>
+    </div>
+
+    <div class="diagram-container">
+        <div class="box">pause_start</div><br>
+        <strong>■ OBSERVABLE PREFIX</strong> | 1.5 S TRAILING WINDOW | <span style="color:red">THE CAUSAL CUT</span><br>
+        <small>NEVER READ</small>
+    </div>
+
+    <p>The waveform is truncated once, at the top of <code>extract_causal_features()</code>, and the untruncated array is deleted from scope. Everything downstream including the per-turn normalisation statistics - physically cannot see past the cut.</p>
+
+    <h2>1. Methodology</h2>
+    <h3>Causality</h3>
+    <p>For a pause at <code>pause_start</code>, the only input is <code>y[: int (pause_start*sr)]</code>. Three consequences worth stating explicitly:</p>
+    <ul>
+        <li><strong>Pitch tracking is re-run per pause:</strong> pyin applies Viterbi smoothing across the whole array it is given, so tracking the full turn once and slicing afterwards would leak the future backwards. F0 is estimated on each causal prefix separately.</li>
+        <li><strong>Normalisation is causal:</strong> Per-turn z-stats for pitch and energy come from the prefix only, so early pauses are normalised against less history as they would be at inference.</li>
+        <li><code>pause_end</code> and label are dropped at load time in <code>predict.py</code>. Pause duration is the single most predictive feature in this task and is not available to a live system at the moment of decision; it is not used.</li>
+    </ul>
+
+    <h3>Feature families</h3>
+    <table>
+        <thead>
+            <tr><th>FAMILY</th><th>SIGNALS</th><th>LINGUISTIC RATIONALE</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>Prosodic (pitch)</td><td>F0 slope over the final 300/500 ms, z-normed final/mean F0, pitch range, voiced/unvoiced ratio, voiced-run count.</td><td>Terminal falls mark declaratives; flat/rising contours mark continuation.</td></tr>
+            <tr><td>Energy</td><td>RMS-dB slope over 300/500 ms and full window, final-100 ms fade ratio, peak-to-final drop, z-normed final energy.</td><td>Utterance-final declination and breath-group release vs. mid-thought hesitation.</td></tr>
+            <tr><td>Spectral</td><td>Centroid and 90% rolloff slopes, coefficient MFCC deltas, delta magnitude ratio.</td><td>Articulatory settling: spectral movement decays into a completed turn.</td></tr>
+            <tr><td>Rhythm</td><td>Syllable-nucleus rate, rate over final 500 ms, time since last nucleus, cumulative turn duration.</td><td>Pre-final lengthening slows the tail of a finished turn.</td></tr>
+            <tr><td>Completeness proxy</td><td>ZCR trend, spectral-flux burst ratio, flux slope, >4 kHz energy ratio.</td><td>Separates sharp plosive/fricative release from smooth vowel decay.</td></tr>
+        </tbody>
+    </table>
+    <p>65 features total. Language is not a feature - the model is trained on both folders jointly and cannot condition on locale, so it must find contours that generalise.</p>
+
+    <h3>Model</h3>
+    <p><code>HistGradientBoostingClassifier(max_depth=4, learning_rate=0.08, max_iter=200, l2_regularization=1.0)</code><br>
+    <code>CalibratedClassifierCV(method="isotonic", cv=GroupKFold(5))</code></p>
+
+    <h2>2. Results</h2>
+    <p class="placeholder">Fill from a real run. Every number below is a placeholder.</p>
+    <table>
+        <thead><tr><th>METRIC (OUT-OF-FOLD)</th><th>VALUE</th></tr></thead>
+        <tbody>
+            <tr><td>ROC-AUC</td><td>0.</td></tr>
+            <tr><td>PR-AUC (eot positive)</td><td>0</td></tr>
+            <tr><td>Threshold τ at ≤5% false cutoff</td><td>.0</td></tr>
+            <tr><td>Mean response delay @ τ</td><td>Ms</td></tr>
+            <tr><td>Median response delay @ τ</td><td>ms</td></tr>
+            <tr><td>Realised false-cutoff rate @ τ</td><td>%</td></tr>
+        </tbody>
+    </table>
+
+    <h2>3. Reproducing</h2>
+    <p><code>python train.py --data_dir data/english data/hindi</code><br>
+    <code>python predict.py --data_dir data/english --out predictions_english.csv</code><br>
+    <code>python predict.py --data_dir data/hindi --out predictions_hindi.csv</code></p>
+
+    <h2>4. AI vs. human contributions</h2>
+    <table>
+        <thead><tr><th>ITEM</th><th>OWNER</th><th>DETAIL</th></tr></thead>
+        <tbody>
+            <tr><td>Problem framing, metric</td><td>Human</td><td>Delay-at-5%-false-cutoff objective, causality constraint.</td></tr>
+            <tr><td>Architecture & feature design</td><td>Human</td><td>Specified feature families and causal constraints.</td></tr>
+            <tr><td>Model choice & hyperparameters</td><td>Human</td><td>HistGradientBoosting, etc.</td></tr>
+            <tr><td>Code implementation</td><td>AI (Claude)</td><td>Wrote features.py, train.py, predict.py to spec.</td></tr>
+        </tbody>
+    </table>
+
+</body>
+</html>
